@@ -17,11 +17,13 @@
 // - BLE で "millis,Out" 形式のデータを送信
 // ------------------------------------------------------------
 
-constexpr uint32_t SAMPLE_RATE = 44100;
-constexpr size_t MIC_BUFFER_SAMPLES = 128;
+constexpr uint32_t SAMPLE_RATE = 8000;
+constexpr size_t MIC_BUFFER_SAMPLES = 8;  // 8kHz / 8 = 1kHz
+constexpr size_t MIC_DMA_BUFFER_SAMPLES = 8;
+constexpr uint32_t WAVEFORM_PUSH_INTERVAL_MS = 33;
 constexpr int WAVEFORM_DISPLAY_GAIN = 2;  //8
 constexpr size_t WAVEFORM_DISPLAY_DECIMATION = 8;
-constexpr size_t BLE_BATCH_LINES = 25;
+constexpr size_t BLE_BATCH_LINES = 10;
 constexpr size_t BLE_BATCH_BUFFER_SIZE = 768;
 
 // M5StickS3 Hat2-BusのGPIOを使用します。
@@ -59,11 +61,14 @@ bool audioDataSeen = false;
 uint32_t nextQueueAttemptMs = 0;
 uint32_t lastRecordFailureMs = 0;
 uint32_t lastSampleAt = 0;
+uint32_t bleSampleTimestampMs = 0;
 uint32_t lastBleTxMs = 0;
 uint32_t lastPeakLogMs = 0;
+uint32_t lastWaveformPushMs = 0;
 char bleBatchBuffer[BLE_BATCH_BUFFER_SIZE];
 size_t bleBatchLength = 0;
 size_t bleBatchLines = 0;
+uint32_t bleBatchCount = 0;
 int waveformX = 0;
 int previousSample = 0;
 M5Canvas waveformSprite(&M5.Display);
@@ -149,6 +154,13 @@ void sendBleBatch() {
 
   bleTxChar->setValue((uint8_t*)bleBatchBuffer, bleBatchLength);
   bleTxChar->notify();
+  bleBatchCount++;
+  if (bleBatchCount % 100 == 0) {
+    Serial.print("BLE batch #");
+    Serial.print(bleBatchCount);
+    Serial.print(": ");
+    Serial.print(bleBatchBuffer);
+  }
   bleBatchLength = 0;
   bleBatchLines = 0;
 }
@@ -253,6 +265,7 @@ void toggleRecording() {
     releasedTail = 0;
     portEXIT_CRITICAL(&releasedMux);
     nextQueueAttemptMs = 0;
+    bleSampleTimestampMs = millis();
     micBufferPending = M5.Mic.record(micBufferA, MIC_BUFFER_SAMPLES);
     bool secondBufferQueued = M5.Mic.record(micBufferB, MIC_BUFFER_SAMPLES);
     if (!micBufferPending || !secondBufferQueued) {
@@ -321,6 +334,8 @@ void setup() {
 
   internalMicConfig = M5.Mic.config();
   internalMicConfig.sample_rate = SAMPLE_RATE;
+  internalMicConfig.over_sampling = 1;
+  internalMicConfig.dma_buf_len = MIC_DMA_BUFFER_SAMPLES;
 
   externalMicConfig = internalMicConfig;
   externalMicConfig.pin_data_in = EXTERNAL_I2S_DATA_PIN;
@@ -404,7 +419,10 @@ void loop() {
       }
       drawWaveform(displaySample);
     }
-    waveformSprite.pushSprite(0, 34);
+    if (millis() - lastWaveformPushMs >= WAVEFORM_PUSH_INTERVAL_MS) {
+      lastWaveformPushMs = millis();
+      waveformSprite.pushSprite(0, 34);
+    }
 
     int value = 0;
     for (size_t index = 0; index < sampleCount; ++index) {
@@ -426,7 +444,8 @@ void loop() {
       updateDisplay();
     }
 
-    appendBleData(millis(), value);
+    appendBleData(bleSampleTimestampMs, value);
+    bleSampleTimestampMs += 1;
 
     if (isRecording) {
       bool queued = M5.Mic.record(releasedBuffer, MIC_BUFFER_SAMPLES);

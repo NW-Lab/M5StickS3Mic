@@ -7,7 +7,7 @@ Arduinoで実装し、BLEでデータを送信します。
 
 - 内蔵マイク: ES8311経由のI2S MEMSマイク
 - 外部マイク: INMP441
-- サンプリング周波数: 44.1kHz
+- サンプリング周波数: 8kHz
 - 音声データ: 16bit PCM
 
 内蔵ES8311のI2Sピンは、使用するM5StickS3の基板リビジョンとM5Unifiedの
@@ -73,7 +73,7 @@ BLEはNordic UART Service形式です。
 - TX（通知/読み取り）: `6E400003-B5A3-F393-E0A9-E50E24DCCA9E`
 
 音声データを受信するクライアントは、TX characteristicの通知を購読してください。
-通知1回あたり最大25行をまとめて送信します。各行は改行で区切られ、
+通知1回あたり最大10行をまとめて送信します。各行は改行で区切られ、
 受信側ではカンマ区切りの1列目を`millis`、2列目を`Out`として扱ってください。
 
 Arduinoスケッチは [M5StickS3Mic.ino](M5StickS3Mic.ino) です。
